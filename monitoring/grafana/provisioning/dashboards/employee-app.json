@@ -1,0 +1,142 @@
+{
+  "__inputs": [],
+  "__requires": [],
+  "annotations": { "list": [] },
+  "title": "Employee App - Full Stack Monitoring",
+  "uid": "employee-app-monitor",
+  "version": 1,
+  "schemaVersion": 38,
+  "refresh": "10s",
+  "time": { "from": "now-30m", "to": "now" },
+  "panels": [
+    {
+      "id": 1, "gridPos": {"h":4,"w":4,"x":0,"y":0},
+      "type": "stat", "title": "API Status",
+      "targets": [{"expr": "up{job=\"spring-boot-backend\"}", "legendFormat": "Backend"}],
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "orientation": "auto", "textMode": "auto", "colorMode": "background"},
+      "fieldConfig": {"defaults": {"mappings": [{"type":"value","options":{"0":{"text":"DOWN","color":"red"},"1":{"text":"UP","color":"green"}}}]}}
+    },
+    {
+      "id": 2, "gridPos": {"h":4,"w":4,"x":4,"y":0},
+      "type": "stat", "title": "MySQL Status",
+      "targets": [{"expr": "up{job=\"mysql\"}", "legendFormat": "MySQL"}],
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "background"},
+      "fieldConfig": {"defaults": {"mappings": [{"type":"value","options":{"0":{"text":"DOWN","color":"red"},"1":{"text":"UP","color":"green"}}}]}}
+    },
+    {
+      "id": 3, "gridPos": {"h":4,"w":4,"x":8,"y":0},
+      "type": "stat", "title": "Requests Per Second",
+      "targets": [{"expr": "sum(rate(http_server_requests_seconds_count{job=\"spring-boot-backend\"}[1m]))", "legendFormat": "RPS"}],
+      "fieldConfig": {"defaults": {"unit": "reqps", "color": {"mode": "thresholds"}, "thresholds": {"steps": [{"value":0,"color":"green"},{"value":50,"color":"yellow"},{"value":100,"color":"red"}]}}}
+    },
+    {
+      "id": 4, "gridPos": {"h":4,"w":4,"x":12,"y":0},
+      "type": "stat", "title": "Error Rate %",
+      "targets": [{"expr": "sum(rate(http_server_requests_seconds_count{job=\"spring-boot-backend\",status=~\"5..\"}[1m])) / sum(rate(http_server_requests_seconds_count{job=\"spring-boot-backend\"}[1m])) * 100", "legendFormat": "Error %"}],
+      "fieldConfig": {"defaults": {"unit": "percent", "color": {"mode": "thresholds"}, "thresholds": {"steps": [{"value":0,"color":"green"},{"value":1,"color":"yellow"},{"value":5,"color":"red"}]}}}
+    },
+    {
+      "id": 5, "gridPos": {"h":4,"w":4,"x":16,"y":0},
+      "type": "stat", "title": "Avg Response Time",
+      "targets": [{"expr": "sum(rate(http_server_requests_seconds_sum{job=\"spring-boot-backend\"}[1m])) / sum(rate(http_server_requests_seconds_count{job=\"spring-boot-backend\"}[1m])) * 1000", "legendFormat": "ms"}],
+      "fieldConfig": {"defaults": {"unit": "ms", "color": {"mode": "thresholds"}, "thresholds": {"steps": [{"value":0,"color":"green"},{"value":200,"color":"yellow"},{"value":500,"color":"red"}]}}}
+    },
+    {
+      "id": 6, "gridPos": {"h":4,"w":4,"x":20,"y":0},
+      "type": "stat", "title": "DB Connections",
+      "targets": [{"expr": "hikaricp_connections_active{job=\"spring-boot-backend\"}", "legendFormat": "Active"}],
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"steps": [{"value":0,"color":"green"},{"value":8,"color":"yellow"},{"value":10,"color":"red"}]}}}
+    },
+    {
+      "id": 7, "gridPos": {"h":8,"w":12,"x":0,"y":4},
+      "type": "timeseries", "title": "HTTP Request Rate (Throughput)",
+      "targets": [
+        {"expr": "sum(rate(http_server_requests_seconds_count{job=\"spring-boot-backend\"}[1m])) by (uri)", "legendFormat": "{{uri}}"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "reqps", "color": {"mode": "palette-classic"}}}
+    },
+    {
+      "id": 8, "gridPos": {"h":8,"w":12,"x":12,"y":4},
+      "type": "timeseries", "title": "Response Time (P95 latency)",
+      "targets": [
+        {"expr": "histogram_quantile(0.95, sum(rate(http_server_requests_seconds_bucket{job=\"spring-boot-backend\"}[5m])) by (le, uri))", "legendFormat": "P95 {{uri}}"},
+        {"expr": "histogram_quantile(0.50, sum(rate(http_server_requests_seconds_bucket{job=\"spring-boot-backend\"}[5m])) by (le, uri))", "legendFormat": "P50 {{uri}}"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "s", "color": {"mode": "palette-classic"}}}
+    },
+    {
+      "id": 9, "gridPos": {"h":8,"w":12,"x":0,"y":12},
+      "type": "timeseries", "title": "JVM Memory Usage",
+      "targets": [
+        {"expr": "jvm_memory_used_bytes{job=\"spring-boot-backend\",area=\"heap\"}", "legendFormat": "Heap Used"},
+        {"expr": "jvm_memory_max_bytes{job=\"spring-boot-backend\",area=\"heap\"}", "legendFormat": "Heap Max"},
+        {"expr": "jvm_memory_used_bytes{job=\"spring-boot-backend\",area=\"nonheap\"}", "legendFormat": "Non-Heap Used"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "bytes", "color": {"mode": "palette-classic"}}}
+    },
+    {
+      "id": 10, "gridPos": {"h":8,"w":12,"x":12,"y":12},
+      "type": "timeseries", "title": "Container CPU Usage %",
+      "targets": [
+        {"expr": "rate(container_cpu_usage_seconds_total{name=~\"employee.*\"}[1m]) * 100", "legendFormat": "{{name}}"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "percent", "color": {"mode": "palette-classic"}}}
+    },
+    {
+      "id": 11, "gridPos": {"h":8,"w":12,"x":0,"y":20},
+      "type": "timeseries", "title": "Container Memory Usage",
+      "targets": [
+        {"expr": "container_memory_usage_bytes{name=~\"employee.*\"}", "legendFormat": "{{name}}"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "bytes", "color": {"mode": "palette-classic"}}}
+    },
+    {
+      "id": 12, "gridPos": {"h":8,"w":12,"x":12,"y":20},
+      "type": "timeseries", "title": "Network I/O",
+      "targets": [
+        {"expr": "rate(container_network_receive_bytes_total{name=~\"employee.*\"}[1m])", "legendFormat": "{{name}} RX"},
+        {"expr": "rate(container_network_transmit_bytes_total{name=~\"employee.*\"}[1m])", "legendFormat": "{{name}} TX"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "Bps", "color": {"mode": "palette-classic"}}}
+    },
+    {
+      "id": 13, "gridPos": {"h":8,"w":12,"x":0,"y":28},
+      "type": "timeseries", "title": "Database Connection Pool",
+      "targets": [
+        {"expr": "hikaricp_connections_active{job=\"spring-boot-backend\"}", "legendFormat": "Active"},
+        {"expr": "hikaricp_connections_idle{job=\"spring-boot-backend\"}", "legendFormat": "Idle"},
+        {"expr": "hikaricp_connections_pending{job=\"spring-boot-backend\"}", "legendFormat": "Pending"},
+        {"expr": "hikaricp_connections{job=\"spring-boot-backend\"}", "legendFormat": "Total"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "short", "color": {"mode": "palette-classic"}}}
+    },
+    {
+      "id": 14, "gridPos": {"h":8,"w":12,"x":12,"y":28},
+      "type": "timeseries", "title": "HTTP Errors (4xx and 5xx)",
+      "targets": [
+        {"expr": "sum(rate(http_server_requests_seconds_count{job=\"spring-boot-backend\",status=~\"4..\"}[1m])) by (status,uri)", "legendFormat": "4xx {{status}} {{uri}}"},
+        {"expr": "sum(rate(http_server_requests_seconds_count{job=\"spring-boot-backend\",status=~\"5..\"}[1m])) by (status,uri)", "legendFormat": "5xx {{status}} {{uri}}"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "reqps", "color": {"mode": "palette-classic"}}}
+    },
+    {
+      "id": 15, "gridPos": {"h":8,"w":12,"x":0,"y":36},
+      "type": "timeseries", "title": "MySQL Queries Per Second",
+      "targets": [
+        {"expr": "rate(mysql_global_status_queries{job=\"mysql\"}[1m])", "legendFormat": "Queries/sec"},
+        {"expr": "rate(mysql_global_status_slow_queries{job=\"mysql\"}[1m])", "legendFormat": "Slow Queries/sec"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "ops", "color": {"mode": "palette-classic"}}}
+    },
+    {
+      "id": 16, "gridPos": {"h":8,"w":12,"x":12,"y":36},
+      "type": "timeseries", "title": "MySQL Connections",
+      "targets": [
+        {"expr": "mysql_global_status_threads_connected{job=\"mysql\"}", "legendFormat": "Connected"},
+        {"expr": "mysql_global_status_threads_running{job=\"mysql\"}", "legendFormat": "Running"},
+        {"expr": "mysql_global_variables_max_connections{job=\"mysql\"}", "legendFormat": "Max Allowed"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "short", "color": {"mode": "palette-classic"}}}
+    }
+  ]
+}

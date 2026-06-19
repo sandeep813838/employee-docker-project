@@ -1,0 +1,18 @@
+CREATE DATABASE IF NOT EXISTS employees;
+USE employees;
+
+CREATE TABLE IF NOT EXISTS employee (
+    id         BIGINT AUTO_INCREMENT PRIMARY KEY,
+    name       VARCHAR(100)   NOT NULL,
+    department VARCHAR(100)   NOT NULL,
+    salary     DECIMAL(10,2)  NOT NULL,
+    email      VARCHAR(150)   NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT INTO employee (name, department, salary, email) VALUES
+('Srinivas Kumar', 'Infrastructure', 85000.00, 'srinivas@company.com'),
+('Ravi Shankar',   'DevOps',         78000.00, 'ravi@company.com'),
+('Priya Reddy',    'Backend Dev',    92000.00, 'priya@company.com'),
+('Anand Rao',      'Linux Admin',    75000.00, 'anand@company.com'),
+('Deepa Nair',     'Cloud Ops',      88000.00, 'deepa@company.com');

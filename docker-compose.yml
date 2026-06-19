@@ -1,0 +1,199 @@
+# ═══════════════════════════════════════════════════════════════════
+# Docker Compose — Employee App + Full Monitoring Stack
+#
+# NEW services added:
+#   prometheus     — collects metrics from all services
+#   grafana        — dashboards and visualization
+#   mysql-exporter — exposes MySQL metrics to Prometheus
+#   cadvisor       — exposes Docker container metrics (CPU, RAM, Network)
+# ═══════════════════════════════════════════════════════════════════
+
+services:
+
+  # ─────────────────────────────────────────
+  # TIER 1: MySQL Database
+  # ─────────────────────────────────────────
+  mysql:
+    image: mysql:8.0
+    container_name: employee-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: password
+      MYSQL_DATABASE: employees
+      MYSQL_USER: appuser
+      MYSQL_PASSWORD: apppassword
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./mysql/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - employee-net
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-ppassword"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 300s
+
+  # ─────────────────────────────────────────
+  # TIER 2: Spring Boot Backend
+  # ─────────────────────────────────────────
+  backend:
+   # build:
+   #   context: ./backend
+    #  dockerfile: Dockerfile
+    image: sampath369/employee-backend:1.0
+    container_name: employee-backend
+    restart: unless-stopped
+    environment:
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: employees
+      DB_USER: root
+      DB_PASSWORD: password
+      SPRING_PROFILES_ACTIVE: docker
+    ports:
+      - "8080:8080"
+    networks:
+      - employee-net
+    depends_on:
+      mysql:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # ─────────────────────────────────────────
+  # TIER 3: Nginx Frontend
+  # ─────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    image: employee-frontend:1.0
+    container_name: employee-frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    networks:
+      - employee-net
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # ─────────────────────────────────────────
+  # MONITORING: Prometheus
+  # Scrapes metrics from backend, mysql-exporter, cadvisor
+  # Access: http://localhost:9090
+  # ─────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: employee-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+      - '--storage.tsdb.retention.time=7d'
+    networks:
+      - employee-net
+    depends_on:
+      - backend
+
+  # ─────────────────────────────────────────
+  # MONITORING: Grafana
+  # Visualizes Prometheus data as dashboards
+  # Access: http://localhost:3000
+  # Login: admin / admin123
+  # ─────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:latest
+    container_name: employee-grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin123
+      GF_USERS_ALLOW_SIGN_UP: false
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
+    networks:
+      - employee-net
+    depends_on:
+      - prometheus
+
+  # ─────────────────────────────────────────
+  # MONITORING: MySQL Exporter
+  # Reads MySQL internals and exposes as Prometheus metrics
+  # Metrics: connections, queries/sec, slow queries
+  # ─────────────────────────────────────────
+  mysql-exporter:
+    image: prom/mysqld-exporter:latest
+    container_name: employee-mysql-exporter
+    restart: unless-stopped
+    environment:
+      MYSQLD_EXPORTER_PASSWORD: password
+    ports:
+      - "9104:9104"
+    command:
+      - '--mysqld.address=mysql:3306'
+      - '--mysqld.username=root'
+    networks:
+      - employee-net
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  # ─────────────────────────────────────────
+  # MONITORING: cAdvisor
+  # Reads Docker daemon and exposes container resource metricdokcer s
+  # Metrics: CPU%, Memory, Network I/O, Disk I/O per container
+  # ─────────────────────────────────────────
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:latest
+    container_name: employee-cadvisor
+    restart: unless-stopped
+    ports:
+      - "8081:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    privileged: true
+    devices:
+      - /dev/kmsg
+    networks:
+      - employee-net
+
+volumes:
+  mysql-data:
+    name: employee_mysql-data
+  prometheus-data:
+    name: employee_prometheus-data
+  grafana-data:
+    name: employee_grafana-data
+
+networks:
+  employee-net:
+    name: employee-net
+    driver: bridge

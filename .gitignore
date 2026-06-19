@@ -1,0 +1,21 @@
+# Maven build output
+backend/target/
+
+# IDE files
+.idea/
+*.iml
+.vscode/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Docker volumes data (never commit data)
+mysql-data/
+
+# Environment secrets (NEVER commit passwords)
+.env
+*.env.local

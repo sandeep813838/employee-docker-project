@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Employee Management System</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:'Segoe UI',sans-serif;background:#0f172a;color:#e2e8f0;min-height:100vh}
+    header{background:#1e293b;padding:1.2rem 2rem;display:flex;align-items:center;gap:1rem;border-bottom:1px solid #334155}
+    header h1{font-size:1.4rem;color:#38bdf8}
+    .badge{background:#0ea5e9;color:white;font-size:11px;padding:3px 10px;border-radius:20px}
+    .container{max-width:1100px;margin:2rem auto;padding:0 1.5rem}
+    .toolbar{display:flex;gap:1rem;margin-bottom:1.5rem;flex-wrap:wrap;align-items:center}
+    input[type=text]{flex:1;min-width:200px;padding:10px 14px;border-radius:8px;border:1px solid #334155;background:#1e293b;color:#e2e8f0;font-size:14px}
+    button{padding:10px 18px;border:none;border-radius:8px;cursor:pointer;font-size:14px;font-weight:500;transition:opacity .2s}
+    button:hover{opacity:.85}
+    .btn-primary{background:#0ea5e9;color:white}
+    .btn-success{background:#10b981;color:white}
+    .btn-danger{background:#ef4444;color:white;font-size:12px;padding:6px 12px}
+    .btn-edit{background:#f59e0b;color:white;font-size:12px;padding:6px 12px}
+    table{width:100%;border-collapse:collapse;background:#1e293b;border-radius:12px;overflow:hidden}
+    th{background:#0f172a;padding:12px 16px;text-align:left;font-size:13px;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px}
+    td{padding:13px 16px;border-top:1px solid #334155;font-size:14px}
+    tr:hover td{background:#263148}
+    .dept-badge{background:#1d4ed8;color:#bfdbfe;font-size:12px;padding:3px 10px;border-radius:20px}
+    .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:100;align-items:center;justify-content:center}
+    .modal-overlay.open{display:flex}
+    .modal{background:#1e293b;border-radius:14px;padding:2rem;width:100%;max-width:440px;border:1px solid #334155}
+    .modal h2{margin-bottom:1.2rem;color:#38bdf8}
+    .form-group{margin-bottom:1rem}
+    .form-group label{display:block;font-size:13px;color:#94a3b8;margin-bottom:6px}
+    .form-group input{width:100%;padding:10px 12px;border-radius:8px;border:1px solid #334155;background:#0f172a;color:#e2e8f0;font-size:14px}
+    .form-actions{display:flex;gap:.8rem;margin-top:1.5rem}
+    .status-bar{background:#0f172a;border:1px solid #334155;border-radius:8px;padding:10px 14px;margin-bottom:1.2rem;font-size:13px;color:#94a3b8}
+    .status-bar span{color:#38bdf8;font-weight:500}
+  </style>
+</head>
+<body>
+<header>
+  <h1>Employee Management System</h1>
+  <span class="badge">Docker 3-Tier</span>
+</header>
+<div class="container">
+  <div class="status-bar">
+    API Status: <span id="apiStatus">Checking...</span> &nbsp;|&nbsp;
+    Backend: <span>http://localhost:8080</span> &nbsp;|&nbsp;
+    Employees: <span id="empCount">-</span>
+  </div>
+  <div class="toolbar">
+    <input type="text" id="searchInput" placeholder="Search by name..." />
+    <button class="btn-primary" onclick="loadEmployees()">Refresh</button>
+    <button class="btn-primary" onclick="searchEmployees()">Search</button>
+    <button class="btn-success" onclick="openAddModal()">+ Add Employee</button>
+  </div>
+  <table>
+    <thead><tr><th>#</th><th>Name</th><th>Department</th><th>Salary</th><th>Email</th><th>Actions</th></tr></thead>
+    <tbody id="empTableBody"><tr><td colspan="6" style="text-align:center;padding:2rem;color:#64748b">Loading...</td></tr></tbody>
+  </table>
+</div>
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <h2 id="modalTitle">Add Employee</h2>
+    <input type="hidden" id="empId" />
+    <div class="form-group"><label>Full Name</label><input type="text" id="fName" /></div>
+    <div class="form-group"><label>Department</label><input type="text" id="fDept" /></div>
+    <div class="form-group"><label>Salary</label><input type="text" id="fSalary" /></div>
+    <div class="form-group"><label>Email</label><input type="text" id="fEmail" /></div>
+    <div class="form-actions">
+      <button class="btn-success" onclick="saveEmployee()">Save</button>
+      <button class="btn-danger"  onclick="closeModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+<script>
+  const API='http://localhost:8080/api/employees';
+  async function checkHealth(){try{const r=await fetch('http://localhost:8080/actuator/health');const d=await r.json();document.getElementById('apiStatus').textContent=d.status==='UP'?'UP':'WARN'}catch{document.getElementById('apiStatus').textContent='Unreachable'}}
+  async function loadEmployees(){try{const r=await fetch(API);const data=await r.json();document.getElementById('empCount').textContent=data.length;renderTable(data)}catch{document.getElementById('empTableBody').innerHTML='<tr><td colspan="6" style="text-align:center;color:#f87171;padding:2rem">Cannot reach backend. Is docker compose up running?</td></tr>'}}
+  function renderTable(data){const t=document.getElementById('empTableBody');if(!data.length){t.innerHTML='<tr><td colspan="6" style="text-align:center;padding:2rem;color:#64748b">No employees found.</td></tr>';return}t.innerHTML=data.map(e=>`<tr><td>${e.id}</td><td><strong>${e.name}</strong></td><td><span class="dept-badge">${e.department}</span></td><td>${Number(e.salary).toLocaleString()}</td><td>${e.email}</td><td><button class="btn-edit" onclick="openEditModal(${e.id},'${e.name}','${e.department}',${e.salary},'${e.email}')">Edit</button> <button class="btn-danger" onclick="deleteEmployee(${e.id})">Del</button></td></tr>`).join('')}
+  async function searchEmployees(){const q=document.getElementById('searchInput').value.trim();if(!q){loadEmployees();return}const r=await fetch(`${API}/search?name=${encodeURIComponent(q)}`);renderTable(await r.json())}
+  function openAddModal(){document.getElementById('modalTitle').textContent='Add Employee';document.getElementById('empId').value='';['fName','fDept','fSalary','fEmail'].forEach(id=>document.getElementById(id).value='');document.getElementById('modalOverlay').classList.add('open')}
+  function openEditModal(id,name,dept,salary,email){document.getElementById('modalTitle').textContent='Edit Employee';document.getElementById('empId').value=id;document.getElementById('fName').value=name;document.getElementById('fDept').value=dept;document.getElementById('fSalary').value=salary;document.getElementById('fEmail').value=email;document.getElementById('modalOverlay').classList.add('open')}
+  function closeModal(){document.getElementById('modalOverlay').classList.remove('open')}
+  async function saveEmployee(){const id=document.getElementById('empId').value;const body={name:document.getElementById('fName').value,department:document.getElementById('fDept').value,salary:parseFloat(document.getElementById('fSalary').value),email:document.getElementById('fEmail').value};await fetch(id?`${API}/${id}`:API,{method:id?'PUT':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});closeModal();loadEmployees()}
+  async function deleteEmployee(id){if(!confirm('Delete?'))return;await fetch(`${API}/${id}`,{method:'DELETE'});loadEmployees()}
+  checkHealth();loadEmployees();
+</script>
+</body>
+</html>

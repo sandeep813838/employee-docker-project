@@ -1,0 +1,14 @@
+<!-- ADD THESE TWO DEPENDENCIES to your backend/pom.xml -->
+<!-- inside the <dependencies> section -->
+
+<!-- Micrometer Prometheus Registry — exposes /actuator/prometheus -->
+<dependency>
+    <groupId>io.micrometer</groupId>
+    <artifactId>micrometer-registry-prometheus</artifactId>
+</dependency>
+
+<!-- Micrometer core (usually included but explicit is safer) -->
+<dependency>
+    <groupId>io.micrometer</groupId>
+    <artifactId>micrometer-core</artifactId>
+</dependency>
