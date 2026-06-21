@@ -49,7 +49,7 @@ pipeline {
             steps {
                 echo "===== Running smoke tests on built image ====="
                 sh '''
-                    docker run --rm ${IMAGE_NAME}:1.0 java -version
+                    docker run --rm --entrypoint java ${IMAGE_NAME}:1.0  -version
                     docker images | grep ${IMAGE_NAME}
                 '''
             }
