@@ -1,0 +1,41 @@
+# values-aks.yaml — Azure AKS specific overrides
+backend:
+  image: employeeacr.azurecr.io/employee-backend
+  tag: "1.0"
+  imagePullPolicy: Always
+  replicas: 1
+  resources:
+    requests:
+      memory: "384Mi"
+      cpu: "200m"
+    limits:
+      memory: "768Mi"
+      cpu: "750m"
+
+frontend:
+  image: employeeacr.azurecr.io/employee-frontend
+  tag: "1.0"
+  imagePullPolicy: Always
+  replicas: 1
+  resources:
+    requests:
+      memory: "64Mi"
+      cpu: "100m"
+    limits:
+      memory: "128Mi"
+      cpu: "250m"
+
+mysql:
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "250m"
+    limits:
+      memory: "1536Mi"
+      cpu: "1000m"
+
+ingress:
+  enabled: false
+
+service:
+  frontendType: "LoadBalancer"
