@@ -1,0 +1,36 @@
+# ═══════════════════════════════════════════════════════
+# Ingress — routing rule for the Employee Management app
+#
+# This is NOT a pod, NOT a service. It's a pure routing
+# rule object that the IngressController (nginx pod in
+# ingress-nginx namespace) reads and acts on.
+#
+# Think of it like an nginx server {} block, but written
+# as Kubernetes YAML and managed by the cluster rather
+# than maintained in a config file.
+# ═══════════════════════════════════════════════════════
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: employee-ingress
+  annotations:
+    # Tells Kubernetes which IngressController should
+    # handle this rule — you might have multiple controllers
+    # (nginx, traefik, haproxy) in one cluster
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  ingressClassName: nginx        # matches the class name
+                                 # the minikube nginx addon registers
+
+  rules:
+    - host: employee.local       # the hostname your browser will use
+                                 # we'll add this to your Windows hosts file
+      http:
+        paths:
+          - path: /
+            pathType: Prefix     # matches / and everything under it
+            backend:
+              service:
+                name: frontend   # the ClusterIP Service we just changed
+                port:
+                  number: 80

@@ -1,0 +1,29 @@
+# ═══════════════════════════════════════════════════════
+# Service — gives MySQL a stable DNS name: "mysql"
+#
+# This is the DIRECT equivalent of Docker's built-in DNS that
+# let your backend connect to "jdbc:mysql://mysql:3306/employees"
+# — same hostname concept, different underlying mechanism.
+#
+# WHY "headless" (clusterIP: None):
+# ───────────────────────────────────
+# A normal Service load-balances across multiple pods behind
+# ONE shared virtual IP. That's wrong for a StatefulSet — you
+# want to reach a SPECIFIC pod (mysql-0), not "any mysql pod
+# picked at random." A headless Service instead returns DNS
+# records for EACH individual pod:
+#     mysql-0.mysql.default.svc.cluster.local
+# This is the standard pairing: StatefulSet + headless Service.
+# ═══════════════════════════════════════════════════════
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql
+spec:
+  clusterIP: None        # ← this is what makes it "headless"
+  selector:
+    app: mysql             # matches the StatefulSet pod's label
+  ports:
+    - port: 3306
+      targetPort: 3306
+      name: mysql

@@ -43,7 +43,7 @@
 <div class="container">
   <div class="status-bar">
     API Status: <span id="apiStatus">Checking...</span> &nbsp;|&nbsp;
-    Backend: <span>http://localhost:8080</span> &nbsp;|&nbsp;
+    Backend: <span>via Nginx proxy</span> &nbsp;|&nbsp;
     Employees: <span id="empCount">-</span>
   </div>
   <div class="toolbar">
@@ -72,8 +72,8 @@
   </div>
 </div>
 <script>
-  const API='http://localhost:8080/api/employees';
-  async function checkHealth(){try{const r=await fetch('http://localhost:8080/actuator/health');const d=await r.json();document.getElementById('apiStatus').textContent=d.status==='UP'?'UP':'WARN'}catch{document.getElementById('apiStatus').textContent='Unreachable'}}
+  const API='/api/employees';
+  async function checkHealth(){try{const r=await fetch('/actuator/health');const d=await r.json();document.getElementById('apiStatus').textContent=d.status==='UP'?'UP':'WARN'}catch{document.getElementById('apiStatus').textContent='Unreachable'}}
   async function loadEmployees(){try{const r=await fetch(API);const data=await r.json();document.getElementById('empCount').textContent=data.length;renderTable(data)}catch{document.getElementById('empTableBody').innerHTML='<tr><td colspan="6" style="text-align:center;color:#f87171;padding:2rem">Cannot reach backend. Is docker compose up running?</td></tr>'}}
   function renderTable(data){const t=document.getElementById('empTableBody');if(!data.length){t.innerHTML='<tr><td colspan="6" style="text-align:center;padding:2rem;color:#64748b">No employees found.</td></tr>';return}t.innerHTML=data.map(e=>`<tr><td>${e.id}</td><td><strong>${e.name}</strong></td><td><span class="dept-badge">${e.department}</span></td><td>${Number(e.salary).toLocaleString()}</td><td>${e.email}</td><td><button class="btn-edit" onclick="openEditModal(${e.id},'${e.name}','${e.department}',${e.salary},'${e.email}')">Edit</button> <button class="btn-danger" onclick="deleteEmployee(${e.id})">Del</button></td></tr>`).join('')}
   async function searchEmployees(){const q=document.getElementById('searchInput').value.trim();if(!q){loadEmployees();return}const r=await fetch(`${API}/search?name=${encodeURIComponent(q)}`);renderTable(await r.json())}

@@ -1,0 +1,33 @@
+# ═══════════════════════════════════════════════════════
+# PersistentVolumeClaim — the K8s equivalent of your
+# named Docker volume "employee_mysql-data"
+#
+# In Docker Compose you wrote:
+#   volumes:
+#     - mysql-data:/var/lib/mysql
+#
+# In Kubernetes, a PVC is a REQUEST for storage.
+# Minikube auto-provisions the actual PersistentVolume (PV)
+# behind it using its default StorageClass — in a real cloud
+# cluster, this PVC would trigger creation of an actual EBS
+# volume (AWS), Persistent Disk (GCP), etc.
+#
+# IMPORTANT — with a StatefulSet, you normally don't write a
+# standalone PVC like this at all. Instead you use a
+# "volumeClaimTemplate" INSIDE the StatefulSet spec, which
+# auto-creates one PVC PER POD (so mysql-0 gets its own PVC,
+# mysql-1 would get its own, etc.) This file is kept separate
+# here purely for teaching clarity — see mysql-statefulset.yaml
+# for how it's actually wired in via volumeClaimTemplates.
+# ═══════════════════════════════════════════════════════
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mysql-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce      # only ONE pod can mount this for read/write at a time
+                         # (correct for a single MySQL instance)
+  resources:
+    requests:
+      storage: 1Gi        # how much disk space to request

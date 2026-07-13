@@ -1,0 +1,160 @@
+# ═══════════════════════════════════════════════════════
+# StatefulSet — the actual MySQL workload
+#
+# Maps from docker-compose.yml's "mysql:" service block.
+# Side-by-side comparison of what changed:
+#
+#   docker-compose.yml              StatefulSet equivalent
+#   ─────────────────────────────────────────────────────────
+#   image: mysql:8.0           →    spec.template.spec.containers[0].image
+#   restart: unless-stopped     →   (K8s always restarts failed pods
+#                                     by default — no explicit field needed,
+#                                     this is the Deployment/StatefulSet
+#                                     controller's whole job)
+#   environment:                →   envFrom: configMapRef + secretRef
+#   ports: 3306:3306              →  containerPorts (Service handles
+#                                     the "exposing" part separately)
+#   volumes: mysql-data:...        →  volumeClaimTemplates (auto-creates
+#                                     a PVC per pod)
+#   healthcheck: mysqladmin ping     →  livenessProbe + readinessProbe
+# ═══════════════════════════════════════════════════════
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mysql
+spec:
+  serviceName: mysql          # must match the headless Service name (next file)
+  replicas: 1                  # one MySQL instance, same as your Compose setup
+  selector:
+    matchLabels:
+      app: mysql
+  template:
+    metadata:
+      labels:
+        app: mysql              # Pods get this label — Service uses it to find them
+    spec:
+      containers:
+        - name: mysql
+          image: mysql:8.0
+          ports:
+            - containerPort: 3306
+              name: mysql
+
+          # ── Resource requests/limits ─────────────────────
+          # WITHOUT this, the pod has no memory ceiling and can
+          # get killed by the NODE running out of memory (exactly
+          # what happened — Exit Code 137, same signature as your
+          # Docker --memory=100m OOM kill scenario).
+          # "requests" = what K8s guarantees/reserves for scheduling
+          # "limits"   = the hard ceiling — exceeding this = OOM kill
+          #
+          # NOTE: 768Mi was NOT enough — MySQL's actual first-time
+          # initialization (building system tables/InnoDB redo logs)
+          # needs more headroom than steady-state running does.
+          # Raised to 1.5Gi after hitting Exit 137 mid-init twice.
+          #
+          # FURTHER TUNED for this specific laptop:
+          # Intel i5-7300HQ (4 cores/4 threads, no hyperthreading),
+          # 8GB RAM total. Windows + Docker Desktop/WSL2 overhead
+          # alone consumes 2.5-4GB before Kubernetes even starts,
+          # so memory.limits kept modest. cpu.limits raised from
+          # 750m to 1000m (1 full core) — a CPU LIMIT (unlike a
+          # memory limit) causes THROTTLING not crashing, and
+          # throttling during MySQL's CPU-heavy init phase was
+          # likely making startup even slower on this 4-thread CPU.
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "200m"
+            limits:
+              memory: "1280Mi"
+              cpu: "1000m"
+
+          # ── Environment variables ──────────────────────
+          # envFrom pulls ALL keys from the ConfigMap/Secret
+          # automatically — equivalent to listing every single
+          # "environment:" line in Compose, but without
+          # repeating yourself
+          envFrom:
+            - configMapRef:
+                name: mysql-config
+            - secretRef:
+                name: mysql-secret
+
+          # ── Where the persistent volume gets mounted ─────
+          volumeMounts:
+            - name: mysql-data
+              mountPath: /var/lib/mysql
+            # ── NEW: mount init.sql into the entrypoint init folder ──
+            # This is the direct equivalent of Compose's:
+            #   - ./mysql/init.sql:/docker-entrypoint-initdb.d/init.sql
+            # mysql:8.0's own entrypoint script auto-runs any .sql
+            # file found here, but ONLY on a genuinely fresh/empty
+            # data directory — same one-time-init behavior you
+            # already know from Docker.
+            - name: mysql-init-script
+              mountPath: /docker-entrypoint-initdb.d
+
+          # ── Readiness Probe ───────────────────────────────
+          # "Is this pod ready to RECEIVE TRAFFIC right now?"
+          # If this fails, the pod is removed from the Service's
+          # routing list temporarily — but NOT restarted.
+          # Directly equivalent to your docker-compose healthcheck.
+          #
+          # NOTE: initialDelaySeconds raised from 30s to 90s, and
+          # timeoutSeconds raised from 5s to 10s — first-time MySQL
+          # init on this environment took several MINUTES, and the
+          # process is so I/O-busy during init that even a simple
+          # ping can take longer than 5s to respond. Real logs showed
+          # "command timed out after 5s" while mysqld was legitimately
+          # still alive and initializing, not actually broken.
+          readinessProbe:
+            exec:
+              command: ["mysqladmin", "ping", "-h", "localhost", "-uroot", "-p$(MYSQL_ROOT_PASSWORD)"]
+            initialDelaySeconds: 90
+            periodSeconds: 15
+            timeoutSeconds: 10
+            failureThreshold: 15
+
+          # ── Liveness Probe ────────────────────────────────
+          # "Is this pod fundamentally BROKEN and needs a restart?"
+          # This is the concept Docker Compose's healthcheck does NOT
+          # have a direct equivalent for — Compose only has one
+          # healthcheck type, K8s splits it into two different questions.
+          #
+          # NOTE: this is the probe that was actually CAUSING the
+          # restart loop — kubelet read "still slow to respond" as
+          # "broken, kill it" before init had genuinely finished.
+          # initialDelaySeconds raised from 60s to 180s specifically
+          # so liveness checks don't even START until init has had
+          # real time to complete; timeoutSeconds raised to match.
+          livenessProbe:
+            exec:
+              command: ["mysqladmin", "ping", "-h", "localhost", "-uroot", "-p$(MYSQL_ROOT_PASSWORD)"]
+            initialDelaySeconds: 180
+            periodSeconds: 20
+            timeoutSeconds: 10
+            failureThreshold: 6
+
+      # ── volumes (pod-level) ───────────────────────────────
+      # This is what volumeMounts.name: mysql-init-script above
+      # actually points to — a ConfigMap exposed as a mounted
+      # file/folder inside the container's filesystem.
+      volumes:
+        - name: mysql-init-script
+          configMap:
+            name: mysql-init-script
+
+  # ── volumeClaimTemplates ─────────────────────────────────
+  # THIS is the StatefulSet-specific magic. Instead of one
+  # shared PVC, Kubernetes creates ONE PVC PER POD automatically,
+  # named "mysql-data-mysql-0", "mysql-data-mysql-1", etc.
+  # Each pod's data follows IT specifically if rescheduled.
+  volumeClaimTemplates:
+    - metadata:
+        name: mysql-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 1Gi

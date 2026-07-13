@@ -19,3 +19,18 @@ mysql-data/
 # Environment secrets (NEVER commit passwords)
 .env
 *.env.local
+
+# VS Code settings
+.vscode/
+
+# Personal notes - not for public repo
+interview-notes/
+
+# Backup files
+*.bkp
+*-bkp
+*-backup.*
+
+# Helm dependency lock files
+helm/employee-chart/charts/
+helm/employee-chart/*.lock

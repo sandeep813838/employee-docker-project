@@ -1,0 +1,137 @@
+# ═══════════════════════════════════════════════════════
+# Deployment — the Spring Boot backend workload
+#
+# Maps from docker-compose.yml's "backend:" service block:
+#
+#   docker-compose.yml                  Deployment equivalent
+#   ─────────────────────────────────────────────────────────
+#   image: employee-backend:1.0   →     spec.template.spec.containers[0].image
+#   depends_on: mysql (healthy)    →    initContainer (see below) —
+#                                        K8s has NO native "wait for
+#                                        another service's healthcheck"
+#                                        concept the way Compose does;
+#                                        you build it yourself
+#   environment: DB_HOST...         →   envFrom: configMapRef + secretRef
+#   healthcheck: actuator/health     →  readinessProbe + livenessProbe
+#   restart: unless-stopped           →  default K8s behavior, no field needed
+#   ports: 8080:8080                    →  containerPort (Service handles
+#                                          actual exposure separately)
+# ═══════════════════════════════════════════════════════
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+spec:
+  replicas: 1                # start with 1, same as your Compose setup —
+                              # bump this number alone to scale later
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+    spec:
+
+      # ── initContainer ──────────────────────────────────
+      # Docker Compose had: depends_on: mysql: condition: service_healthy
+      # Kubernetes Deployments have NO equivalent field — "depends_on"
+      # simply doesn't exist as a concept here. The standard pattern is
+      # an initContainer: a separate container that runs FIRST and must
+      # complete successfully before the main container is even started.
+      # This one just loops until it can reach mysql:3306.
+      initContainers:
+        - name: wait-for-mysql
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              until nc -z mysql 3306; do
+                echo "Waiting for mysql to be reachable...";
+                sleep 3;
+              done;
+              echo "mysql is reachable - proceeding";
+
+      containers:
+        - name: backend
+          image: employee-backend:1.0
+          imagePullPolicy: IfNotPresent
+          # IfNotPresent = use the local image already loaded into
+          # Minikube's Docker daemon, don't try pulling from a registry.
+          # (see deployment notes below for "minikube image load" step)
+          ports:
+            - containerPort: 8080
+              name: http
+
+          # TUNED for Intel i5-7300HQ (4 cores/4 threads) + 8GB RAM
+          # laptop. cpu.limits raised to 750m (from 500m) to reduce
+          # JVM startup throttling — Spring Boot's class loading
+          # and JIT compilation during boot is genuinely CPU-bound,
+          # and a tight CPU limit slows boot further on a 4-thread
+          # machine, compounding with limited parallelism.
+          resources:
+            requests:
+              memory: "384Mi"
+              cpu: "200m"
+            limits:
+              memory: "512Mi"
+              cpu: "750m"
+
+          # ── Environment variables ──────────────────────
+          # Non-secret config from backend-config, PLUS the
+          # MySQL root password pulled from the SAME mysql-secret
+          # Secret we already created — one source of truth,
+          # not duplicated into a second Secret.
+          envFrom:
+            - configMapRef:
+                name: backend-config
+          env:
+            - name: DB_USER
+              value: "root"
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mysql-secret
+                  key: MYSQL_ROOT_PASSWORD
+
+          # ── Readiness Probe ───────────────────────────────
+          # Directly hits the SAME /actuator/health endpoint your
+          # Docker healthcheck used. httpGet is a built-in probe
+          # type — no need to shell out to curl/wget like Docker's
+          # healthcheck required (recall the nginx:alpine wget
+          # bug from your Compose work — httpGet sidesteps that
+          # whole class of problem entirely, since kubelet does
+          # the HTTP call itself, no binary needed inside the image).
+          #
+          # NOTE: initialDelaySeconds raised from 30s to 60s after
+          # observing Spring Boot startup takes 60-90s on this
+          # Minikube/WSL2 environment — same slow-init pattern
+          # as MySQL, same fix: give real observed startup time
+          # rather than a guessed number.
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8080
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+
+          # ── Liveness Probe ────────────────────────────────
+          # initialDelaySeconds raised from 45s to 90s —
+          # liveness MUST NOT fire before the app has had real
+          # time to start. If liveness fires first and the app
+          # is still starting (not broken, just slow), kubelet
+          # kills it — exactly what happened here.
+          # failureThreshold raised from 3 to 5 — once the app
+          # IS running, give it more tolerance for a slow
+          # health response under load before declaring it broken.
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8080
+            initialDelaySeconds: 90
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 5

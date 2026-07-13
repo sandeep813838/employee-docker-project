@@ -1,0 +1,66 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mysql
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+spec:
+  serviceName: mysql
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mysql
+  template:
+    metadata:
+      labels:
+        app: mysql
+    spec:
+      containers:
+        - name: mysql
+          image: {{ .Values.mysql.image }}
+          ports:
+            - containerPort: 3306
+              name: mysql
+          resources:
+            requests:
+              memory: {{ .Values.mysql.resources.requests.memory | quote }}
+              cpu: {{ .Values.mysql.resources.requests.cpu | quote }}
+            limits:
+              memory: {{ .Values.mysql.resources.limits.memory | quote }}
+              cpu: {{ .Values.mysql.resources.limits.cpu | quote }}
+          envFrom:
+            - configMapRef:
+                name: mysql-config
+            - secretRef:
+                name: mysql-secret
+          volumeMounts:
+            - name: mysql-data
+              mountPath: /var/lib/mysql
+            - name: mysql-init-script
+              mountPath: /docker-entrypoint-initdb.d
+          readinessProbe:
+            exec:
+              command: ["mysqladmin", "ping", "-h", "localhost", "-uroot", "-p$(MYSQL_ROOT_PASSWORD)"]
+            initialDelaySeconds: {{ .Values.mysql.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.mysql.readinessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.mysql.readinessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.mysql.readinessProbe.failureThreshold }}
+          livenessProbe:
+            exec:
+              command: ["mysqladmin", "ping", "-h", "localhost", "-uroot", "-p$(MYSQL_ROOT_PASSWORD)"]
+            initialDelaySeconds: {{ .Values.mysql.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.mysql.livenessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.mysql.livenessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.mysql.livenessProbe.failureThreshold }}
+      volumes:
+        - name: mysql-init-script
+          configMap:
+            name: mysql-init-script
+  volumeClaimTemplates:
+    - metadata:
+        name: mysql-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: {{ .Values.mysql.storage | quote }}

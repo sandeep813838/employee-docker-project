@@ -1,0 +1,26 @@
+# ═══════════════════════════════════════════════════════
+# ConfigMap — backend's non-secret environment variables
+#
+# Direct equivalent of these lines from docker-compose.yml:
+#   environment:
+#     DB_HOST: mysql
+#     DB_PORT: 3306
+#     DB_NAME: employees
+#     SPRING_PROFILES_ACTIVE: docker
+#
+# Notice DB_HOST is "mysql" — the EXACT SAME headless Service
+# name we created in mysql-service.yaml. This is the Kubernetes
+# equivalent of Docker's "jdbc:mysql://mysql:3306" service-name
+# DNS resolution — same concept, same hostname, different
+# underlying DNS mechanism (kube-dns/CoreDNS instead of Docker's
+# embedded DNS).
+# ═══════════════════════════════════════════════════════
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backend-config
+data:
+  DB_HOST: "mysql"
+  DB_PORT: "3306"
+  DB_NAME: "employees"
+  SPRING_PROFILES_ACTIVE: "docker"

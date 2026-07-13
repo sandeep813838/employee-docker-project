@@ -1,0 +1,29 @@
+# ═══════════════════════════════════════════════════════
+# Service — gives the backend a stable DNS name: "backend"
+#
+# This is a NORMAL ClusterIP Service (not headless like mysql's),
+# because the backend is stateless — we WANT Kubernetes to load
+# balance across replicas behind one shared virtual IP, unlike
+# MySQL where we needed to address one specific pod.
+#
+# Once the frontend/Nginx is deployed, it will reach this exactly
+# the way your nginx.conf used "proxy_pass http://backend:8080" —
+# same hostname, same port, just resolved via kube-dns instead of
+# Docker's embedded DNS.
+# ═══════════════════════════════════════════════════════
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+spec:
+  selector:
+    app: backend          # matches the Deployment pod's label
+  ports:
+    - port: 8080
+      targetPort: 8080
+      name: http
+  type: ClusterIP          # internal-only — same reachability as
+                           # Docker's internal network; NOT exposed
+                           # outside the cluster (that's what NodePort
+                           # or Ingress would be for, covered when we
+                           # get to the frontend)

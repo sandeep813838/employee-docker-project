@@ -1,0 +1,24 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+spec:
+  selector:
+    app: frontend
+  ports:
+    - port: 80
+      targetPort: 80
+      name: http
+      {{- if eq .Values.service.frontendType "NodePort" }}
+      nodePort: {{ .Values.service.frontendNodePort }}
+      {{- end }}
+  type: {{ .Values.service.frontendType }}
+  # ── How this conditional works ────────────────────────────
+  # If values.yaml has service.frontendType: "ClusterIP"
+  #   → renders as type: ClusterIP, no nodePort line
+  # If values.yaml has service.frontendType: "NodePort"
+  #   → renders as type: NodePort, nodePort: 30080
+  # This is Helm's "if" block — one template, two behaviours
+  # depending on the value passed at install time.

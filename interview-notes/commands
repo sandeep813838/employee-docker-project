@@ -1,3 +1,0 @@
-check health check history
-This is the most useful command to understand why a container is unhealthy
-$docker inspect employee-backend --format='{{json .State.Health}}' | python -m json.tool

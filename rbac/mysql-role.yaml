@@ -1,0 +1,38 @@
+# ═══════════════════════════════════════════════════════
+# Role — defines WHAT is allowed
+#
+# A Role is a list of permissions expressed as:
+#   apiGroups + resources + verbs
+#
+# This Role grants mysql-sa the minimum permissions
+# actually needed to operate:
+#   - Read its own ConfigMap (mysql-config)
+#   - Read its own Secret (mysql-secret)
+#
+# It CANNOT:
+#   - Delete pods
+#   - Read other namespaces
+#   - List all secrets cluster-wide
+#   - Anything else not explicitly listed here
+#
+# This is the "principle of least privilege" — grant
+# only what is actually needed, nothing more.
+# ═══════════════════════════════════════════════════════
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: mysql-role
+  namespace: default
+rules:
+  - apiGroups: [""]          # "" means the core API group
+                              # (Pods, Services, ConfigMaps,
+                              #  Secrets, PVCs all live here)
+    resources: ["configmaps"]
+    verbs: ["get", "list"]   # READ ONLY — cannot create,
+                              # update, or delete ConfigMaps
+
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get"]           # can only GET (not list) secrets
+                              # — reduces exposure even further
+                              # since LIST would show all secret names

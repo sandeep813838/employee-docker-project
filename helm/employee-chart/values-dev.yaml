@@ -1,0 +1,24 @@
+# values-dev.yaml — Development environment overrides
+# Usage: helm install employee-dev . -f values-dev.yaml
+#
+# Only override what's DIFFERENT from values.yaml defaults.
+# Everything not listed here uses the default from values.yaml.
+
+backend:
+  replicas: 1                # single replica, enough for dev
+
+frontend:
+  replicas: 1
+
+mysql:
+  resources:
+    limits:
+      memory: "512Mi"        # slightly less than prod
+      cpu: "500m"
+
+ingress:
+  enabled: true
+  host: "employee-dev.local" # different hostname than prod
+
+service:
+  frontendType: "ClusterIP"  # use ingress, not nodeport

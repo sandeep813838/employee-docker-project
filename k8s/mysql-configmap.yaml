@@ -1,0 +1,19 @@
+# ═══════════════════════════════════════════════════════
+# ConfigMap — non-secret environment variables
+#
+# This directly replaces these lines from docker-compose.yml:
+#   environment:
+#     MYSQL_DATABASE: employees
+#     MYSQL_USER: appuser
+#
+# Anything here is fine to be visible in plain text —
+# database names and usernames aren't sensitive the way
+# passwords are.
+# ═══════════════════════════════════════════════════════
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mysql-config
+data:
+  MYSQL_DATABASE: "employees"
+  MYSQL_USER: "appuser"

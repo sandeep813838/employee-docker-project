@@ -1,0 +1,97 @@
+# ═══════════════════════════════════════════════════════
+# Deployment — the Nginx frontend workload
+#
+# Maps from docker-compose.yml's "frontend:" service block.
+# Stateless, like backend — Deployment is correct, not
+# StatefulSet, for the same reasoning covered when we built
+# the backend Deployment.
+# ═══════════════════════════════════════════════════════
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+
+      # ── initContainer ──────────────────────────────────
+      # Same pattern as backend's wait-for-mysql — frontend's
+      # nginx.conf proxies to backend, so it's good practice
+      # to wait for backend to be reachable before starting,
+      # even though Nginx itself would technically still start
+      # without it (it would just 502 on /api/ calls until
+      # backend came up). Matches your Compose depends_on chain:
+      # frontend depended on backend depended on mysql.
+      initContainers:
+        - name: wait-for-backend
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              until nc -z backend 8080; do
+                echo "Waiting for backend to be reachable...";
+                sleep 3;
+              done;
+              echo "backend is reachable - proceeding";
+
+      containers:
+        - name: frontend
+          image: employee-frontend:1.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 80
+              name: http
+
+          # Modest resources — Nginx is lightweight, same
+          # reasoning as the "frontend: memory 128m" limit
+          # back in your docker-compose.yml.
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "100m"
+            limits:
+              memory: "128Mi"
+              cpu: "250m"
+
+          # ── Mount the ConfigMap's nginx.conf OVER the
+          # image's built-in default.conf ────────────────────
+          volumeMounts:
+            - name: nginx-config
+              mountPath: /etc/nginx/conf.d/default.conf
+              subPath: default.conf
+              # subPath is important here: without it, Kubernetes
+              # would mount the ENTIRE ConfigMap as a directory at
+              # that path, wiping out anything else nginx expects
+              # in /etc/nginx/conf.d/. subPath mounts just the ONE
+              # key ("default.conf") as a single file instead.
+
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 20
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+      volumes:
+        - name: nginx-config
+          configMap:
+            name: frontend-nginx-config

@@ -1,0 +1,51 @@
+# ═══════════════════════════════════════════════════════
+# ConfigMap — holds the init.sql content as a Kubernetes
+# ConfigMap key, so it can be mounted as a FILE inside the
+# mysql-0 pod.
+#
+# This is the K8s equivalent of this Docker Compose line:
+#   volumes:
+#     - ./mysql/init.sql:/docker-entrypoint-initdb.d/init.sql
+#
+# WHY this was the missing piece:
+# ─────────────────────────────────────────────────────────
+# The official mysql:8.0 image's entrypoint script automatically
+# runs ANY .sql file found in /docker-entrypoint-initdb.d/ the
+# FIRST time it initializes a truly empty data directory.
+# MYSQL_DATABASE in our ConfigMap created the "employees" DATABASE
+# itself (the entrypoint script does that part natively), but
+# creating the actual "employee" TABLE and seed rows was always
+# init.sql's job — and nothing was mounting init.sql into the
+# pod at all. This ConfigMap + the volumeMounts/volumes addition
+# in mysql-statefulset.yaml fixes that gap.
+#
+# IMPORTANT: this only runs automatically on a database directory
+# that is genuinely empty/fresh. Since your current mysql-0 PVC
+# already has an "employees" database (just missing the table),
+# you'll need to delete the PVC once more for this to trigger
+# automatically — see the apply instructions below.
+# ═══════════════════════════════════════════════════════
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mysql-init-script
+data:
+  init.sql: |
+    CREATE DATABASE IF NOT EXISTS employees;
+    USE employees;
+
+    CREATE TABLE IF NOT EXISTS employee (
+        id         BIGINT AUTO_INCREMENT PRIMARY KEY,
+        name       VARCHAR(100)   NOT NULL,
+        department VARCHAR(100)   NOT NULL,
+        salary     DECIMAL(10,2)  NOT NULL,
+        email      VARCHAR(150)   NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
+    INSERT INTO employee (name, department, salary, email) VALUES
+    ('Srinivas Kumar', 'Infrastructure', 85000.00, 'srinivas@company.com'),
+    ('Ravi Shankar',   'DevOps',         78000.00, 'ravi@company.com'),
+    ('Priya Reddy',    'Backend Dev',    92000.00, 'priya@company.com'),
+    ('Anand Rao',      'Linux Admin',    75000.00, 'anand@company.com'),
+    ('Deepa Nair',     'Cloud Ops',      88000.00, 'deepa@company.com');

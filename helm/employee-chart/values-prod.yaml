@@ -1,0 +1,38 @@
+# values-prod.yaml — Production environment overrides
+# Usage: helm install employee-prod . -f values-prod.yaml
+#
+# In a real prod environment:
+#   - Never put passwords here — use --set from a secrets manager
+#     or Kubernetes Secrets managed externally
+#   - helm install employee-prod . -f values-prod.yaml \
+#       --set mysql.rootPassword=$MYSQL_ROOT_PASSWORD
+
+backend:
+  replicas: 2                # two replicas for availability
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "250m"
+    limits:
+      memory: "768Mi"
+      cpu: "1000m"
+
+frontend:
+  replicas: 2
+
+mysql:
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "250m"
+    limits:
+      memory: "1024Mi"       # more headroom for prod workload
+      cpu: "1000m"
+  storage: "5Gi"             # more storage for prod data
+
+ingress:
+  enabled: true
+  host: "employee.example.com"  # real domain in prod
+
+service:
+  frontendType: "ClusterIP"

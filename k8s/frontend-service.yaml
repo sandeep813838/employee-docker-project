@@ -1,0 +1,26 @@
+# ═══════════════════════════════════════════════════════
+# Service — frontend, now ClusterIP (was NodePort)
+#
+# CHANGED: switched from NodePort to ClusterIP because
+# the IngressController is now the single external entry
+# point. The frontend Service no longer needs to be
+# directly reachable from outside the cluster — the
+# IngressController reaches it internally by Service name,
+# exactly like backend's ClusterIP Service was always
+# reached by the frontend pod internally.
+#
+# The Ingress object (ingress.yaml) is what handles
+# external-to-cluster routing now.
+# ═══════════════════════════════════════════════════════
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+spec:
+  selector:
+    app: frontend
+  ports:
+    - port: 80
+      targetPort: 80
+      name: http
+  type: ClusterIP

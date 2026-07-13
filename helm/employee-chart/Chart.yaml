@@ -1,0 +1,9 @@
+apiVersion: v2
+name: employee-chart
+description: |
+  3-tier Employee Management System — Spring Boot, MySQL, Nginx.
+  Deployed across Docker, Docker Compose, Jenkins CI/CD,
+  Prometheus/Grafana monitoring, and Kubernetes on Minikube.
+type: application
+version: 1.0.0        # Chart version — bump this when you change the chart
+appVersion: "1.0.0"   # Application version — the version of your actual app

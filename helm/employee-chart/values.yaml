@@ -1,0 +1,90 @@
+# ═══════════════════════════════════════════════════════
+# values.yaml — default configuration for the employee-chart
+#
+# Every {{ .Values.xxx }} in the templates reads from here.
+# Override any value at deploy time:
+#   helm install myapp . --set mysql.rootPassword=newpass
+#   helm install myapp . -f values-prod.yaml
+#
+# This is the single source of truth for all configuration —
+# replacing the 11 separate hardcoded YAML files you had before.
+# ═══════════════════════════════════════════════════════
+
+# ── MySQL configuration ──────────────────────────────────
+mysql:
+  image: mysql:8.0
+  rootPassword: "password"        # CHANGE in production — use --set or secrets manager
+  appPassword: "apppassword"
+  database: "employees"
+  user: "appuser"
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "150m"
+    limits:
+      memory: "640Mi"
+      cpu: "750m"
+  storage: "1Gi"
+  # Probe timing — tuned for slow WSL2/Minikube init
+  readinessProbe:
+    initialDelaySeconds: 90
+    periodSeconds: 15
+    timeoutSeconds: 10
+    failureThreshold: 15
+  livenessProbe:
+    initialDelaySeconds: 180
+    periodSeconds: 20
+    timeoutSeconds: 10
+    failureThreshold: 6
+
+# ── Backend configuration ─────────────────────────────────
+backend:
+  image: employee-backend
+  tag: "1.0"
+  imagePullPolicy: IfNotPresent
+  replicas: 1
+  springProfile: "docker"
+  resources:
+    requests:
+      memory: "384Mi"
+      cpu: "200m"
+    limits:
+      memory: "512Mi"
+      cpu: "750m"
+  readinessProbe:
+    initialDelaySeconds: 120
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 10
+  livenessProbe:
+    initialDelaySeconds: 180
+    periodSeconds: 30
+    timeoutSeconds: 10
+    failureThreshold: 3
+
+# ── Frontend configuration ────────────────────────────────
+frontend:
+  image: employee-frontend
+  tag: "1.0"
+  imagePullPolicy: IfNotPresent
+  replicas: 1
+  resources:
+    requests:
+      memory: "64Mi"
+      cpu: "100m"
+    limits:
+      memory: "128Mi"
+      cpu: "250m"
+
+# ── Ingress configuration ──────────────────────────────────
+ingress:
+  enabled: true                   # set to false to use NodePort instead
+  host: "employee.local"
+  className: "nginx"
+
+# ── Service configuration ─────────────────────────────────
+service:
+  # "ClusterIP" when ingress.enabled=true
+  # "NodePort" when ingress.enabled=false
+  frontendType: "ClusterIP"
+  frontendNodePort: 30080         # only used when frontendType=NodePort

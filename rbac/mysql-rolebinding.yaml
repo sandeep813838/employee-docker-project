@@ -1,0 +1,25 @@
+# ═══════════════════════════════════════════════════════
+# RoleBinding — the GLUE connecting WHO to WHAT
+#
+# A Role alone does nothing. A ServiceAccount alone does
+# nothing. The RoleBinding is what connects them:
+#
+#   mysql-sa (WHO) + mysql-role (WHAT) = actual permissions
+#
+# Without this RoleBinding, mysql-sa has ZERO permissions
+# even though mysql-role exists. The binding is what
+# makes the permission take effect.
+# ═══════════════════════════════════════════════════════
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: mysql-rolebinding
+  namespace: default
+subjects:
+  - kind: ServiceAccount   # WHO is getting these permissions
+    name: mysql-sa          # must match ServiceAccount name exactly
+    namespace: default
+roleRef:
+  kind: Role               # WHAT permissions are being granted
+  name: mysql-role          # must match Role name exactly
+  apiGroup: rbac.authorization.k8s.io
