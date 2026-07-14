@@ -1,0 +1,254 @@
+// ═══════════════════════════════════════════════════════
+// Jenkinsfile — CI/CD Pipeline for AKS Deployment
+//
+// Flow:
+//   Git push → Jenkins → Build → Push to ACR → helm upgrade on AKS
+//
+// What changed from the original Docker Compose pipeline:
+//   OLD Stage 5: docker push to Docker Hub
+//   NEW Stage 5: docker push to Azure Container Registry (ACR)
+//
+//   OLD Stage 6: docker compose up --force-recreate
+//   NEW Stage 6: az login + az aks get-credentials + helm upgrade
+//
+//   OLD Stage 7: curl http://backend:8080/actuator/health
+//   NEW Stage 7: curl http://4.157.168.143/actuator/health
+// ═══════════════════════════════════════════════════════
+
+pipeline {
+    agent any
+
+    environment {
+        // ── ACR Configuration ────────────────────────────
+        ACR_NAME        = "employeeacr"
+        ACR_LOGIN       = "employeeacr.azurecr.io"
+        BACKEND_IMAGE   = "employee-backend"
+        FRONTEND_IMAGE  = "employee-frontend"
+
+        // ── Azure credentials (stored in Jenkins credential store)
+        // Manage Jenkins → Credentials → Global → Add Credentials
+        // Kind: Secret Text, one per value below
+        AZURE_CLIENT_ID       = credentials('AZURE_CLIENT_ID')
+        AZURE_CLIENT_SECRET   = credentials('AZURE_CLIENT_SECRET')
+        AZURE_TENANT_ID       = credentials('AZURE_TENANT_ID')
+        AZURE_SUBSCRIPTION_ID = credentials('AZURE_SUBSCRIPTION_ID')
+
+        // ── AKS Configuration ────────────────────────────
+        AKS_RESOURCE_GROUP  = "employee-rg"
+        AKS_CLUSTER_NAME    = "employee-aks"
+        HELM_RELEASE        = "employee-app"
+        HELM_CHART          = "helm/employee-chart"
+        HELM_VALUES_FILE    = "helm/employee-chart/values-aks.yaml"
+
+        // ── AKS LoadBalancer public IP ───────────────────
+        // Update this if the IP changes after a cluster stop/start
+        AKS_PUBLIC_IP       = "4.157.168.143"
+    }
+
+    stages {
+
+        // ── Stage 1: Checkout ────────────────────────────
+        stage('Checkout') {
+            steps {
+                checkout scm
+                sh 'git log -1 --oneline'
+                sh 'echo "Branch: $(git rev-parse --abbrev-ref HEAD)"'
+            }
+        }
+
+        // ── Stage 2: Build ───────────────────────────────
+        stage('Build') {
+            steps {
+                sh '''
+                    echo "Building backend image..."
+                    docker build -t ${BACKEND_IMAGE}:${BUILD_NUMBER} ./backend
+
+                    echo "Building frontend image..."
+                    docker build -t ${FRONTEND_IMAGE}:${BUILD_NUMBER} ./frontend
+
+                    docker images | grep -E "${BACKEND_IMAGE}|${FRONTEND_IMAGE}"
+                '''
+            }
+        }
+
+        // ── Stage 3: Test ────────────────────────────────
+        // Smoke-check the built image before pushing anywhere
+        stage('Test') {
+            steps {
+                sh '''
+                    echo "Testing backend image..."
+                    docker run --rm \
+                      --entrypoint java \
+                      ${BACKEND_IMAGE}:${BUILD_NUMBER} \
+                      -version
+
+                    echo "Confirming images exist..."
+                    docker images | grep ${BACKEND_IMAGE}
+                    docker images | grep ${FRONTEND_IMAGE}
+                '''
+                // ── Why --entrypoint java ──────────────────
+                // The Dockerfile ENTRYPOINT is ["java","-jar"]
+                // Without --entrypoint override, running
+                // "java -version" would be passed as the jar
+                // filename and fail. This was the real Jenkins
+                // bug hit during the original Docker pipeline build.
+            }
+        }
+
+        // ── Stage 4: Tag for ACR ─────────────────────────
+        stage('Tag') {
+            steps {
+                sh '''
+                    echo "Tagging images for ACR..."
+
+                    # Tag with build number (immutable, for rollback)
+                    docker tag ${BACKEND_IMAGE}:${BUILD_NUMBER} \
+                      ${ACR_LOGIN}/${BACKEND_IMAGE}:${BUILD_NUMBER}
+
+                    docker tag ${BACKEND_IMAGE}:${BUILD_NUMBER} \
+                      ${ACR_LOGIN}/${BACKEND_IMAGE}:latest
+
+                    docker tag ${FRONTEND_IMAGE}:${BUILD_NUMBER} \
+                      ${ACR_LOGIN}/${FRONTEND_IMAGE}:${BUILD_NUMBER}
+
+                    docker tag ${FRONTEND_IMAGE}:${BUILD_NUMBER} \
+                      ${ACR_LOGIN}/${FRONTEND_IMAGE}:latest
+
+                    echo "Tagged images:"
+                    docker images | grep ${ACR_LOGIN}
+                '''
+            }
+        }
+
+        // ── Stage 5: Push to ACR ─────────────────────────
+        // Replaces the old "Push to Docker Hub" stage
+        // Uses Service Principal credentials (not personal login)
+        stage('Push to ACR') {
+            steps {
+                sh '''
+                    echo "Logging into Azure..."
+                    az login \
+                      --service-principal \
+                      --username ${AZURE_CLIENT_ID} \
+                      --password ${AZURE_CLIENT_SECRET} \
+                      --tenant ${AZURE_TENANT_ID} \
+                      --output none
+
+                    az account set \
+                      --subscription ${AZURE_SUBSCRIPTION_ID}
+
+                    echo "Logging Docker into ACR..."
+                    az acr login --name ${ACR_NAME}
+
+                    echo "Pushing backend to ACR..."
+                    docker push ${ACR_LOGIN}/${BACKEND_IMAGE}:${BUILD_NUMBER}
+                    docker push ${ACR_LOGIN}/${BACKEND_IMAGE}:latest
+
+                    echo "Pushing frontend to ACR..."
+                    docker push ${ACR_LOGIN}/${FRONTEND_IMAGE}:${BUILD_NUMBER}
+                    docker push ${ACR_LOGIN}/${FRONTEND_IMAGE}:latest
+
+                    echo "Images in ACR:"
+                    az acr repository list --name ${ACR_NAME} --output table
+                '''
+            }
+        }
+
+        // ── Stage 6: Deploy to AKS ───────────────────────
+        // Replaces the old "docker compose up --force-recreate"
+        // helm upgrade: updates the running release with new image tag
+        // --install: creates the release if it doesn't exist yet
+        // --set: overrides the image tag to the current build number
+        stage('Deploy to AKS') {
+            steps {
+                sh '''
+                    echo "Getting AKS credentials..."
+                    az aks get-credentials \
+                      --resource-group ${AKS_RESOURCE_GROUP} \
+                      --name ${AKS_CLUSTER_NAME} \
+                      --overwrite-existing
+
+                    echo "Current Helm releases:"
+                    helm list
+
+                    echo "Deploying build #${BUILD_NUMBER} to AKS..."
+                    helm upgrade ${HELM_RELEASE} ${HELM_CHART} \
+                      --install \
+                      --values ${HELM_VALUES_FILE} \
+                      --set backend.tag=${BUILD_NUMBER} \
+                      --set frontend.tag=${BUILD_NUMBER} \
+                      --wait \
+                      --timeout 5m
+
+                    echo "Deployment complete. Pod status:"
+                    kubectl get pods
+                '''
+                // ── Why --wait and --timeout ──────────────────
+                // Without --wait, helm upgrade returns immediately
+                // and the Smoke Test stage would curl before the
+                // new pods are actually ready. --wait blocks until
+                // all pods are Running and Ready, same effect as
+                // kubectl rollout status in your existing Jenkinsfile.
+            }
+        }
+
+        // ── Stage 7: Smoke Test ───────────────────────────
+        stage('Smoke Test') {
+            steps {
+                sh '''
+                    echo "Waiting for LoadBalancer to be ready..."
+                    sleep 15
+
+                    echo "Testing health endpoint..."
+                    curl -f http://${AKS_PUBLIC_IP}/actuator/health || exit 1
+
+                    echo "Testing API endpoint..."
+                    curl -f http://${AKS_PUBLIC_IP}/api/employees || exit 1
+
+                    echo "Smoke test passed - build #${BUILD_NUMBER} is live"
+                '''
+            }
+        }
+
+        // ── Stage 8: Cleanup ─────────────────────────────
+        stage('Cleanup') {
+            steps {
+                sh '''
+                    echo "Removing local build images..."
+                    docker image prune -f
+
+                    docker rmi ${BACKEND_IMAGE}:${BUILD_NUMBER} 2>/dev/null || true
+                    docker rmi ${FRONTEND_IMAGE}:${BUILD_NUMBER} 2>/dev/null || true
+                    docker rmi ${ACR_LOGIN}/${BACKEND_IMAGE}:${BUILD_NUMBER} 2>/dev/null || true
+                    docker rmi ${ACR_LOGIN}/${FRONTEND_IMAGE}:${BUILD_NUMBER} 2>/dev/null || true
+
+                    echo "Cleanup complete"
+                '''
+            }
+        }
+    }
+
+    // ── Post-build actions ───────────────────────────────
+    post {
+        success {
+            echo """
+Pipeline SUCCEEDED — Build #${BUILD_NUMBER}
+  Images pushed to: ${ACR_LOGIN}
+  Deployed to AKS:  ${AKS_CLUSTER_NAME}
+  App accessible:   http://${AKS_PUBLIC_IP}
+            """
+        }
+        failure {
+            echo """
+Pipeline FAILED — Build #${BUILD_NUMBER}
+  Check the failing stage above for root cause.
+  Current AKS pod status:
+            """
+            sh 'kubectl get pods 2>/dev/null || echo "kubectl not available"'
+            sh 'kubectl get events --sort-by=.lastTimestamp 2>/dev/null | tail -10 || true'
+        }
+        always {
+            echo "Pipeline finished — Build #${BUILD_NUMBER}"
+        }
+    }
+}
