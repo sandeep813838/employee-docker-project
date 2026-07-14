@@ -13,8 +13,8 @@
 # ── MySQL configuration ──────────────────────────────────
 mysql:
   image: mysql:8.0
-  rootPassword: "password"        # CHANGE in production — use --set or secrets manager
-  appPassword: "apppassword"
+  rootPassword: ""        # CHANGE in production — use --set or secrets manager
+  appPassword: ""
   database: "employees"
   user: "appuser"
   resources:

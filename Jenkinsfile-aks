@@ -19,6 +19,9 @@ pipeline {
     agent any
 
     environment {
+	    // ── NEW: Database passwords from Jenkins credentials ──
+        MYSQL_ROOT_PASSWORD = credentials('MYSQL_ROOT_PASSWORD')
+        MYSQL_APP_PASSWORD  = credentials('MYSQL_APP_PASSWORD')
         // ── ACR Configuration ────────────────────────────
         ACR_NAME        = "employeeacr"
         ACR_LOGIN       = "employeeacr.azurecr.io"
@@ -177,7 +180,9 @@ pipeline {
                       --values ${HELM_VALUES_FILE} \
                       --set backend.tag=${BUILD_NUMBER} \
                       --set frontend.tag=${BUILD_NUMBER} \
-                      --wait \
+                      --set mysql.rootPassword=${MYSQL_ROOT_PASSWORD} \
+                      --set mysql.appPassword=${MYSQL_APP_PASSWORD} \
+					  --wait \
                       --timeout 5m
 
                     echo "Deployment complete. Pod status:"
