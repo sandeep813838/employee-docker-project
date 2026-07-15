@@ -19,9 +19,6 @@ pipeline {
     agent any
 
     environment {
-	    // ── NEW: Database passwords from Jenkins credentials ──
-        MYSQL_ROOT_PASSWORD = credentials('MYSQL_ROOT_PASSWORD')
-        MYSQL_APP_PASSWORD  = credentials('MYSQL_APP_PASSWORD')
         // ── ACR Configuration ────────────────────────────
         ACR_NAME        = "employeeacr"
         ACR_LOGIN       = "employeeacr.azurecr.io"
@@ -46,6 +43,11 @@ pipeline {
         // ── AKS LoadBalancer public IP ───────────────────
         // Update this if the IP changes after a cluster stop/start
         AKS_PUBLIC_IP       = "4.157.168.143"
+        
+        // ── Key Vault name ────────────────────────────────
+        // Secrets are fetched from Key Vault at deploy time
+        // NOT stored in Jenkins credentials or any YAML file
+        KEY_VAULT_NAME      = "employee-kv"
     }
 
     stages {
@@ -171,6 +173,32 @@ pipeline {
                       --name ${AKS_CLUSTER_NAME} \
                       --overwrite-existing
 
+                    echo "Fetching secrets from Azure Key Vault..."
+                    # ── This is the Key Vault integration ──────────────
+                    # az is already logged in via Service Principal from
+                    # Stage 5 (Push to ACR). The SP has "Key Vault Secrets
+                    # User" role — read-only access to employee-kv.
+                    # Secrets are fetched at runtime, never stored in
+                    # any file, never appear in Git, never appear in
+                    # Jenkins credentials for these values.
+                    MYSQL_ROOT_PWD=$(az keyvault secret show \
+                      --vault-name employee-kv \
+                      --name mysql-root-password \
+                      --query value \
+                      --output tsv)
+
+                    MYSQL_APP_PWD=$(az keyvault secret show \
+                      --vault-name employee-kv \
+                      --name mysql-app-password \
+                      --query value \
+                      --output tsv)
+
+                    echo "Secrets fetched from Key Vault successfully"
+                    # ── NOTE: never echo the actual values ─────────────
+                    # Even though Jenkins masks known credentials,
+                    # echoing secrets fetched dynamically would expose
+                    # them in plain text in the build log.
+
                     echo "Current Helm releases:"
                     helm list
 
@@ -180,20 +208,14 @@ pipeline {
                       --values ${HELM_VALUES_FILE} \
                       --set backend.tag=${BUILD_NUMBER} \
                       --set frontend.tag=${BUILD_NUMBER} \
-                      --set mysql.rootPassword=${MYSQL_ROOT_PASSWORD} \
-                      --set mysql.appPassword=${MYSQL_APP_PASSWORD} \
-					  --wait \
+                      --set mysql.rootPassword=${MYSQL_ROOT_PWD} \
+                      --set mysql.appPassword=${MYSQL_APP_PWD} \
+                      --wait \
                       --timeout 5m
 
                     echo "Deployment complete. Pod status:"
                     kubectl get pods
                 '''
-                // ── Why --wait and --timeout ──────────────────
-                // Without --wait, helm upgrade returns immediately
-                // and the Smoke Test stage would curl before the
-                // new pods are actually ready. --wait blocks until
-                // all pods are Running and Ready, same effect as
-                // kubectl rollout status in your existing Jenkinsfile.
             }
         }
 
