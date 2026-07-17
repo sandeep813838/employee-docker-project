@@ -15,10 +15,6 @@ spec:
       nodePort: {{ .Values.service.frontendNodePort }}
       {{- end }}
   type: {{ .Values.service.frontendType }}
-  # ── How this conditional works ────────────────────────────
-  # If values.yaml has service.frontendType: "ClusterIP"
-  #   → renders as type: ClusterIP, no nodePort line
-  # If values.yaml has service.frontendType: "NodePort"
-  #   → renders as type: NodePort, nodePort: 30080
-  # This is Helm's "if" block — one template, two behaviours
-  # depending on the value passed at install time.
+  {{- if .Values.service.loadBalancerIP }}
+  loadBalancerIP: {{ .Values.service.loadBalancerIP }}
+  {{- end }}

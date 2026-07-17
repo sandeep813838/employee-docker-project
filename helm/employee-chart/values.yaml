@@ -88,3 +88,8 @@ service:
   # "NodePort" when ingress.enabled=false
   frontendType: "ClusterIP"
   frontendNodePort: 30080         # only used when frontendType=NodePort
+
+# ── Key Vault configuration ───────────────────────────────
+# Note: Fetch passwords from Key Vault during deployment
+# MYSQL_ROOT_PWD=$(az keyvault secret show --vault-name employee-kv --name mysql-root-password --query value --output tsv)
+# MYSQL_APP_PWD=$(az keyvault secret show --vault-name employee-kv --name mysql-app-password --query value --output tsv)

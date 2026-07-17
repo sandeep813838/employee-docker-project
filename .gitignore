@@ -34,3 +34,10 @@ interview-notes/
 # Helm dependency lock files
 helm/employee-chart/charts/
 helm/employee-chart/*.lock
+
+# Terraform
+terraform/*.tfvars          # contains passwords
+terraform/.terraform/       # downloaded provider plugins (large)
+terraform/.terraform.lock.hcl # can be committed but optional
+terraform/terraform.tfstate # state file — use remote state in production
+terraform/terraform.tfstate.backup

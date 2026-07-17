@@ -39,3 +39,4 @@ ingress:
 
 service:
   frontendType: "LoadBalancer"
+  loadBalancerIP: "20.51.167.6"

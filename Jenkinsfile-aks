@@ -42,7 +42,7 @@ pipeline {
 
         // ── AKS LoadBalancer public IP ───────────────────
         // Update this if the IP changes after a cluster stop/start
-        AKS_PUBLIC_IP       = "4.157.168.143"
+        AKS_PUBLIC_IP       = "20.51.167.6"
         
         // ── Key Vault name ────────────────────────────────
         // Secrets are fetched from Key Vault at deploy time
