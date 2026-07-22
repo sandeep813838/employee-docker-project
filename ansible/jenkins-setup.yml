@@ -1,0 +1,205 @@
+---
+# ═══════════════════════════════════════════════════════
+# jenkins-setup.yml — Ansible playbook to configure Jenkins
+#
+# Run with:
+#   ansible-playbook -i inventory.ini jenkins-setup.yml
+#
+# Run in check mode (dry run — no changes made):
+#   ansible-playbook -i inventory.ini jenkins-setup.yml --check
+#
+# Run with verbose output:
+#   ansible-playbook -i inventory.ini jenkins-setup.yml -v
+# ═══════════════════════════════════════════════════════
+
+- name: Configure Jenkins container with DevOps tools
+  hosts: jenkins          # matches [jenkins] group in inventory.ini
+  become: false           # already running as root via docker connection
+
+  vars:
+    kubectl_version: "v1.31.0"
+    helm_install_script: "https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3"
+    azure_cli_script: "https://aka.ms/InstallAzureCLIDeb"
+    dns_server: "8.8.8.8"
+
+  tasks:
+
+    # ── Task 1: Update apt cache ──────────────────────
+    - name: Update apt package cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+      # cache_valid_time: skip update if cache is less than
+      # 1 hour old — avoids slow repeated apt-get update calls
+      # on subsequent playbook runs (idempotent behaviour)
+
+    # ── Task 2: Install base dependencies ────────────
+    - name: Install base dependencies
+      apt:
+        name:
+          - curl
+          - apt-transport-https
+          - gnupg
+          - lsb-release
+          - ca-certificates
+          - dnsutils
+        state: present
+      # state: present = "ensure these are installed"
+      # If already installed, Ansible skips this task
+      # This is IDEMPOTENT — safe to run 10 times
+
+    # ── Task 3: Download kubectl ──────────────────────
+    - name: Download kubectl binary
+      get_url:
+        url: "https://dl.k8s.io/release/{{ kubectl_version }}/bin/linux/amd64/kubectl"
+        dest: /usr/local/bin/kubectl
+        mode: '0755'
+      # get_url module = managed download
+      # mode: '0755' = executable permissions
+      # Idempotent: only downloads if file doesn't exist
+      # or has changed (checksum comparison)
+
+    # ── Task 4: Verify kubectl ────────────────────────
+    - name: Verify kubectl is installed
+      command: kubectl version --client
+      register: kubectl_output
+      changed_when: false
+      # register: saves the output to a variable
+      # changed_when: false = this task never counts as
+      # a "change" — it's just a verification step
+      # Prevents false positives in the change report
+
+    - name: Show kubectl version
+      debug:
+        msg: "{{ kubectl_output.stdout }}"
+      # debug module prints a value — useful for confirming
+      # what was actually installed
+
+    # ── Task 5: Install Helm ──────────────────────────
+    - name: Check if Helm is already installed
+      command: helm version --short
+      register: helm_check
+      ignore_errors: true
+      changed_when: false
+      # ignore_errors: true = don't fail the playbook if
+      # helm isn't installed yet (command returns non-zero)
+
+    - name: Install Helm via official script
+      shell: "curl -fsSL {{ helm_install_script }} | bash"
+      when: helm_check.rc != 0
+      # when: conditional — only run this task IF helm
+      # is NOT already installed (rc != 0 means command failed)
+      # This makes the playbook idempotent for Helm
+
+    - name: Verify Helm is installed
+      command: helm version --short
+      register: helm_output
+      changed_when: false
+
+    - name: Show Helm version
+      debug:
+        msg: "{{ helm_output.stdout }}"
+
+    # ── Task 6: Install Azure CLI ─────────────────────
+    - name: Check if Azure CLI is already installed
+      command: az version
+      register: az_check
+      ignore_errors: true
+      changed_when: false
+
+    - name: Install Azure CLI via official script
+      shell: "curl -sL {{ azure_cli_script }} | bash"
+      when: az_check.rc != 0
+      # Only install if not already present
+
+    - name: Verify Azure CLI is installed
+      command: az version --output none
+      register: az_output
+      changed_when: false
+
+    - name: Show Azure CLI installed
+      debug:
+        msg: "Azure CLI installed successfully"
+
+    # ── Task 7: Install Docker CLI ────────────────────
+    - name: Add Docker GPG key
+      shell: |
+        curl -fsSL https://download.docker.com/linux/debian/gpg \
+          | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+      args:
+        creates: /usr/share/keyrings/docker-archive-keyring.gpg
+      # creates: makes this task idempotent — only runs
+      # if the file doesn't already exist
+
+    - name: Add Docker apt repository
+      shell: |
+        echo "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] \
+          https://download.docker.com/linux/debian $(lsb_release -cs) stable" \
+          > /etc/apt/sources.list.d/docker.list
+      args:
+        creates: /etc/apt/sources.list.d/docker.list
+
+    - name: Install Docker CLI
+      apt:
+        name: docker-ce-cli
+        state: present
+        update_cache: yes
+
+    - name: Verify Docker CLI
+      command: docker --version
+      register: docker_output
+      changed_when: false
+
+    - name: Show Docker CLI version
+      debug:
+        msg: "{{ docker_output.stdout }}"
+
+    # ── Task 8: Configure DNS ─────────────────────────
+    - name: Configure 8.8.8.8 as DNS nameserver
+      lineinfile:
+        path: /etc/resolv.conf
+        line: "nameserver {{ dns_server }}"
+        insertbefore: BOF
+        state: present
+      # lineinfile module = manage a single line in a file
+      # insertbefore: BOF = insert before beginning of file
+      # (makes it the PRIMARY nameserver, checked first)
+      # Idempotent: only adds the line if not already present
+      # This fixes the Azure AKS hostname DNS resolution
+      # issue inside the Jenkins container
+      #ignore_errors: yes
+      tags: 
+        - dns
+    # ── Task 9: Final verification ────────────────────
+    - name: Verify all tools are available
+      command: "{{ item }}"
+      loop:
+        - "kubectl version --client"
+        - "helm version"
+        - "docker --version"
+      changed_when: false
+      # loop: runs the same task for each item in the list
+      # Confirms all 3 tools work in one block
+
+    - name: Test DNS resolution (Azure AKS endpoint)
+      command: "nslookup google.com {{ dns_server }}"
+      register: dns_test
+      changed_when: false
+      ignore_errors: true
+
+    - name: Show DNS test result
+      debug:
+        msg: "DNS via 8.8.8.8 working: {{ dns_test.rc == 0 }}"
+
+    # ── Task 10: Summary ──────────────────────────────
+    - name: Configuration complete
+      debug:
+        msg: |
+          Jenkins container configured successfully:
+            kubectl: installed
+            helm:    installed
+            az CLI:  installed
+            docker:  installed
+            DNS:     8.8.8.8 configured
+          
+          Ready to run the AKS CI/CD pipeline.
